@@ -318,7 +318,7 @@ export default function Home() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [modificationInstructions, setModificationInstructions] = useState('');
 
-  // Analyze documents
+  // Analyze documents - Process one by one to avoid payload size limits
   const handleAnalyze = useCallback(async () => {
     if (!apiKeyValid) {
       toast.error('Ingresa una API Key válida de Google Gemini');
@@ -331,27 +331,40 @@ export default function Home() {
     }
 
     setIsLoading(true);
-    setLoadingMessage('Analizando documentos con Gemini Vision (OCR)...');
+    const allResults: string[] = [];
 
     try {
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          documents: documents.map(d => ({
-            name: d.name,
-            base64: d.base64,
-            type: d.type
-          })),
-          apiKey: apiKey
-        })
-      });
+      // Process each document separately to avoid Vercel payload limits
+      for (let i = 0; i < documents.length; i++) {
+        const doc = documents[i];
+        setLoadingMessage(`Analizando documento ${i + 1}/${documents.length}: ${doc.name}`);
 
-      const data = await response.json();
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            document: {
+              name: doc.name,
+              base64: doc.base64,
+              type: doc.type
+            },
+            apiKey: apiKey
+          })
+        });
 
-      if (!data.success) {
-        throw new Error(data.error || 'Error al analizar documentos');
+        const data = await response.json();
+
+        if (!data.success) {
+          // Continue with other documents even if one fails
+          allResults.push(`=== ERROR EN DOCUMENTO: ${doc.name} ===\n${data.error}`);
+          toast.error(`Error en ${doc.name}: ${data.error}`);
+        } else {
+          allResults.push(data.data.context);
+        }
       }
+
+      // Combine all results
+      const combinedContext = allResults.join('\n\n---\n\n');
 
       setLoadingMessage('Generando informe con IA...');
 
@@ -360,7 +373,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          context: data.data.context,
+          context: combinedContext,
           apiKey: apiKey
         })
       });
