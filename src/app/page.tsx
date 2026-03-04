@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Shield,
   Zap,
-  Brain
+  Brain,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -22,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useTheme } from 'next-themes';
 import { useAppState, extractContractDataFromReport } from '@/hooks/useAppState';
 import { FileUploader } from '@/components/app/FileUploader';
@@ -31,6 +33,44 @@ import { ReportEditor, RecommendationGenerator } from '@/components/app/ReportEd
 import { ContractForm } from '@/components/app/ContractForm';
 import type { ContractData } from '@/types';
 import { toast } from 'sonner';
+
+// Helper function to safely parse JSON response
+async function safeParseJSON(response: Response): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  try {
+    const text = await response.text();
+    
+    // Check if response is not OK
+    if (!response.ok) {
+      // Try to parse as JSON first
+      try {
+        const jsonError = JSON.parse(text);
+        return { success: false, error: jsonError.error || jsonError.message || `Error ${response.status}` };
+      } catch {
+        // If not JSON, return the text as error
+        return { 
+          success: false, 
+          error: text || `Error del servidor (${response.status}): ${response.statusText}` 
+        };
+      }
+    }
+    
+    // Try to parse as JSON
+    try {
+      const json = JSON.parse(text);
+      return { success: true, data: json };
+    } catch {
+      return { 
+        success: false, 
+        error: 'La respuesta del servidor no es válida. Intenta con un archivo PDF más pequeño.' 
+      };
+    }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Error de conexión' 
+    };
+  }
+}
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
@@ -72,9 +112,15 @@ export default function Home() {
         })
       });
 
-      const data = await response.json();
+      const result = await safeParseJSON(response);
 
-      if (data.success) {
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Error al analizar documentos');
+      }
+
+      const data = result.data as { success: boolean; data?: { context: string }; error?: string };
+
+      if (data.success && data.data?.context) {
         setLoadingMessage('Generando informe...');
         
         // Generate report from analyzed context
@@ -86,9 +132,15 @@ export default function Home() {
           })
         });
 
-        const reportData = await reportResponse.json();
+        const reportResult = await safeParseJSON(reportResponse);
 
-        if (reportData.success) {
+        if (!reportResult.success || !reportResult.data) {
+          throw new Error(reportResult.error || 'Error al generar informe');
+        }
+
+        const reportData = reportResult.data as { success: boolean; data?: { report: string; verification?: string }; error?: string };
+
+        if (reportData.success && reportData.data?.report) {
           setCurrentReport(reportData.data.report);
           setCurrentStep(2);
           toast.success('Informe generado exitosamente');
@@ -101,10 +153,10 @@ export default function Home() {
             }
           }
         } else {
-          throw new Error(reportData.error);
+          throw new Error(reportData.error || 'Error al generar el informe');
         }
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Error al analizar documentos');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -132,12 +184,18 @@ export default function Home() {
         })
       });
 
-      const data = await response.json();
+      const result = await safeParseJSON(response);
 
-      if (data.success) {
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Error al modificar informe');
+      }
+
+      const data = result.data as { success: boolean; data?: { report: string }; error?: string };
+
+      if (data.success && data.data?.report) {
         setCurrentReport(data.data.report);
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Error al modificar');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -165,15 +223,20 @@ export default function Home() {
         })
       });
 
-      const data = await response.json();
+      const result = await safeParseJSON(response);
 
-      if (data.success) {
-        // Append recommendation to report
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Error al generar recomendación');
+      }
+
+      const data = result.data as { success: boolean; data?: { report: string }; error?: string };
+
+      if (data.success && data.data?.report) {
         const newReport = currentReport + '\n\n' + data.data.report;
         setCurrentReport(newReport);
         toast.success('Recomendación generada');
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Error al generar recomendación');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -203,7 +266,8 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error('Error al generar contrato');
+        const result = await safeParseJSON(response);
+        throw new Error(result.error || 'Error al generar contrato');
       }
 
       // Download the file
@@ -212,8 +276,8 @@ export default function Home() {
       const a = document.createElement('a');
       a.href = url;
       a.download = type === 'sobrevivencia' 
-        ? 'Contrato_Asesoria_Sobrevivencia.txt'
-        : 'Contrato_Asesoria_Vejez_Invalidez.txt';
+        ? 'Contrato_Asesoria_Sobrevivencia.docx'
+        : 'Contrato_Asesoria_Vejez_Invalidez.docx';
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
