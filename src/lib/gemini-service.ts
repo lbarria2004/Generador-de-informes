@@ -137,8 +137,44 @@ export class GeminiService {
   }
 
   /**
-   * Analyze document using Gemini Vision (OCR)
-   * Works with PDFs, images, and scanned documents
+   * Analyze document using Gemini File API (for uploaded files)
+   * Uses the file URI from Gemini's file upload
+   */
+  async analyzeUploadedFile(
+    fileUri: string,
+    mimeType: string,
+    documentName: string
+  ): Promise<string> {
+    try {
+      const prompt = PROMPTS.DOCUMENT_ANALYSIS.replace('{DOCUMENT_NAME}', documentName);
+
+      const response = await this.ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: [
+          { text: prompt },
+          {
+            fileData: {
+              mimeType: mimeType,
+              fileUri: fileUri
+            }
+          }
+        ],
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
+        }
+      });
+
+      const text = response.text;
+      return `=== DOCUMENTO: ${documentName} ===\n${text}`;
+    } catch (error) {
+      console.error('Error in analyzeUploadedFile:', error);
+      throw new Error(`Error al analizar documento ${documentName}: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    }
+  }
+
+  /**
+   * Analyze document using inline data (for small files)
    */
   async analyzeDocumentWithVision(
     base64Data: string,

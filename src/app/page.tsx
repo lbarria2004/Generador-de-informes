@@ -298,6 +298,58 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// Upload file directly to Gemini File API (bypasses Vercel payload limit)
+async function uploadFileToGemini(file: File, apiKey: string): Promise<{ uri: string; mimeType: string }> {
+  const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
+
+  // First, get the resumable upload URL
+  const initiateResponse = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header:Content-Length': file.size.toString(),
+      'X-Goog-Upload-Header:Content-Type': file.type || 'application/octet-stream',
+    },
+  });
+
+  if (!initiateResponse.ok) {
+    throw new Error('Error iniciando carga del archivo');
+  }
+
+  const uploadSessionUrl = initiateResponse.headers.get('x-goog-upload-url');
+  if (!uploadSessionUrl) {
+    throw new Error('No se obtuvo URL de carga');
+  }
+
+  // Then upload the file
+  const uploadResponse = await fetch(uploadSessionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Length': file.size.toString(),
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    body: file,
+  });
+
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    throw new Error(`Error subiendo archivo: ${errorText}`);
+  }
+
+  const fileData = await uploadResponse.json();
+  const fileUri = fileData.file?.uri;
+
+  if (!fileUri) {
+    throw new Error('No se obtuvo URI del archivo');
+  }
+
+  // Wait for file to be processed
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  return { uri: fileUri, mimeType: file.type || 'application/pdf' };
+}
+
 function formatSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -318,7 +370,7 @@ export default function Home() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [modificationInstructions, setModificationInstructions] = useState('');
 
-  // Analyze documents - Process one by one to avoid payload size limits
+  // Analyze documents - Upload to Gemini first, then analyze
   const handleAnalyze = useCallback(async () => {
     if (!apiKeyValid) {
       toast.error('Ingresa una API Key válida de Google Gemini');
@@ -334,32 +386,50 @@ export default function Home() {
     const allResults: string[] = [];
 
     try {
-      // Process each document separately to avoid Vercel payload limits
+      // Upload and process each document
       for (let i = 0; i < documents.length; i++) {
         const doc = documents[i];
-        setLoadingMessage(`Analizando documento ${i + 1}/${documents.length}: ${doc.name}`);
+        setLoadingMessage(`Subiendo documento ${i + 1}/${documents.length}: ${doc.name}`);
 
-        const response = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            document: {
-              name: doc.name,
-              base64: doc.base64,
-              type: doc.type
-            },
-            apiKey: apiKey
-          })
-        });
+        try {
+          // Convert base64 back to File for upload
+          const byteCharacters = atob(doc.base64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let j = 0; j < byteCharacters.length; j++) {
+            byteNumbers[j] = byteCharacters.charCodeAt(j);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const file = new File([byteArray], doc.name, { type: doc.type || 'application/pdf' });
 
-        const data = await response.json();
+          // Upload directly to Gemini File API
+          const { uri, mimeType } = await uploadFileToGemini(file, apiKey);
 
-        if (!data.success) {
-          // Continue with other documents even if one fails
-          allResults.push(`=== ERROR EN DOCUMENTO: ${doc.name} ===\n${data.error}`);
-          toast.error(`Error en ${doc.name}: ${data.error}`);
-        } else {
-          allResults.push(data.data.context);
+          setLoadingMessage(`Analizando documento ${i + 1}/${documents.length}: ${doc.name}`);
+
+          // Send only the URI to backend (small payload)
+          const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileUri: uri,
+              mimeType: mimeType,
+              documentName: doc.name,
+              apiKey: apiKey
+            })
+          });
+
+          const data = await response.json();
+
+          if (!data.success) {
+            allResults.push(`=== ERROR EN DOCUMENTO: ${doc.name} ===\n${data.error}`);
+            toast.error(`Error en ${doc.name}: ${data.error}`);
+          } else {
+            allResults.push(data.data.context);
+          }
+        } catch (uploadError) {
+          console.error(`Error with document ${doc.name}:`, uploadError);
+          allResults.push(`=== ERROR EN DOCUMENTO: ${doc.name} ===\n${uploadError instanceof Error ? uploadError.message : 'Error desconocido'}`);
+          toast.error(`Error en ${doc.name}`);
         }
       }
 

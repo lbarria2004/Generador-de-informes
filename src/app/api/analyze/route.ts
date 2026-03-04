@@ -4,11 +4,11 @@ import { GeminiService, getMimeType } from '@/lib/gemini-service';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-// Single document analysis endpoint
+// Analyze a document that was already uploaded to Gemini File API
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { document, apiKey } = body;
+    const { fileUri, mimeType, documentName, apiKey } = body;
 
     if (!apiKey) {
       return NextResponse.json(
@@ -17,39 +17,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!document) {
+    if (!fileUri) {
       return NextResponse.json(
-        { success: false, error: 'No se proporcionó documento para analizar' },
+        { success: false, error: 'No se proporcionó el URI del archivo' },
         { status: 400 }
       );
     }
 
     const geminiService = new GeminiService(apiKey);
 
-    console.log(`Analyzing document: ${document.name}`);
+    console.log(`Analyzing uploaded file: ${documentName}`);
 
     try {
-      const mimeType = document.type || getMimeType(document.name);
+      const detectedMimeType = mimeType || getMimeType(documentName || '');
 
-      // Use Gemini Vision to analyze the document (OCR)
-      const result = await geminiService.analyzeDocumentWithVision(
-        document.base64,
-        mimeType,
-        document.name
+      // Use Gemini to analyze the already-uploaded file
+      const result = await geminiService.analyzeUploadedFile(
+        fileUri,
+        detectedMimeType,
+        documentName || 'Documento'
       );
 
       return NextResponse.json({
         success: true,
         data: {
           context: result,
-          documentName: document.name
+          documentName: documentName || 'Documento'
         }
       });
     } catch (docError) {
-      console.error(`Error analyzing document ${document.name}:`, docError);
+      console.error(`Error analyzing document:`, docError);
       return NextResponse.json({
         success: false,
-        error: `Error en ${document.name}: ${docError instanceof Error ? docError.message : 'Error desconocido'}`
+        error: `Error al analizar: ${docError instanceof Error ? docError.message : 'Error desconocido'}`
       }, { status: 500 });
     }
   } catch (error) {
