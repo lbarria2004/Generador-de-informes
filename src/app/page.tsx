@@ -298,59 +298,64 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-// Upload file directly to Gemini File API (bypasses Vercel payload limit)
-async function uploadFileToGemini(file: File, apiKey: string): Promise<{ uri: string; mimeType: string }> {
-  // Use simple upload method with metadata
-  const metadata = {
-    file: {
-      display_name: file.name
+// Analyze document directly with Gemini API from client (bypasses Vercel limits)
+async function analyzeWithGeminiDirect(
+  base64Data: string,
+  mimeType: string,
+  documentName: string,
+  apiKey: string
+): Promise<string> {
+  const prompt = `Eres un experto en análisis de documentos previsionales chilenos. Tu tarea es extraer TODA la información del documento proporcionado.
+
+INSTRUCCIONES CRÍTICAS:
+1. Transcribe TODOS los datos con precisión EXACTA - especial atención a montos en UF y pesos
+2. Si ves tablas SCOMP, transcribe TODAS las filas y columnas sin omitir ninguna
+3. Extrae datos del afiliado: nombre, RUT, fecha nacimiento, sexo, estado civil, AFP
+4. Extrae montos: saldos en UF, pensiones en UF y pesos, descuentos de salud
+5. Identifica beneficiarios declarados
+6. Indica claramente el tipo de documento (SCOMP, Certificado de Saldo, Solicitud, etc.)
+7. Para tablas de resultados SCOMP: incluye TODAS las AFP y compañías de seguros con sus montos
+
+DOCUMENTO A ANALIZAR: ${documentName}`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
+        }
+      }),
     }
-  };
+  );
 
-  // Create form data with file and metadata
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('metadata', JSON.stringify(metadata));
-
-  const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
-
-  const uploadResponse = await fetch(uploadUrl, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text();
-    throw new Error(`Error subiendo archivo: ${errorText}`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Error de Gemini: ${errorText}`);
   }
 
-  const fileData = await uploadResponse.json();
-  const fileUri = fileData.file?.uri;
-
-  if (!fileUri) {
-    throw new Error('No se obtuvo URI del archivo');
-  }
-
-  // Wait for file to be processed (poll for state)
-  let attempts = 0;
-  const maxAttempts = 30;
-  while (attempts < maxAttempts) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const checkResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/files/${fileData.file.name}?key=${apiKey}`
-    );
-    
-    if (checkResponse.ok) {
-      const checkData = await checkResponse.json();
-      if (checkData.state === 'ACTIVE' || checkData.state === 'PROCESSING') {
-        break;
-      }
-    }
-    attempts++;
-  }
-
-  return { uri: fileUri, mimeType: file.type || 'application/pdf' };
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  
+  return `=== DOCUMENTO: ${documentName} ===\n${text}`;
 }
 
 function formatSize(bytes: number): string {
@@ -373,7 +378,7 @@ export default function Home() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [modificationInstructions, setModificationInstructions] = useState('');
 
-  // Analyze documents - Upload to Gemini first, then analyze
+  // Analyze documents - Call Gemini directly from client (bypasses Vercel limits)
   const handleAnalyze = useCallback(async () => {
     if (!apiKeyValid) {
       toast.error('Ingresa una API Key válida de Google Gemini');
@@ -389,49 +394,23 @@ export default function Home() {
     const allResults: string[] = [];
 
     try {
-      // Upload and process each document
+      // Analyze each document directly with Gemini API
       for (let i = 0; i < documents.length; i++) {
         const doc = documents[i];
-        setLoadingMessage(`Subiendo documento ${i + 1}/${documents.length}: ${doc.name}`);
+        setLoadingMessage(`Analizando documento ${i + 1}/${documents.length}: ${doc.name}`);
 
         try {
-          // Convert base64 back to File for upload
-          const byteCharacters = atob(doc.base64);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let j = 0; j < byteCharacters.length; j++) {
-            byteNumbers[j] = byteCharacters.charCodeAt(j);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const file = new File([byteArray], doc.name, { type: doc.type || 'application/pdf' });
-
-          // Upload directly to Gemini File API
-          const { uri, mimeType } = await uploadFileToGemini(file, apiKey);
-
-          setLoadingMessage(`Analizando documento ${i + 1}/${documents.length}: ${doc.name}`);
-
-          // Send only the URI to backend (small payload)
-          const response = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fileUri: uri,
-              mimeType: mimeType,
-              documentName: doc.name,
-              apiKey: apiKey
-            })
-          });
-
-          const data = await response.json();
-
-          if (!data.success) {
-            allResults.push(`=== ERROR EN DOCUMENTO: ${doc.name} ===\n${data.error}`);
-            toast.error(`Error en ${doc.name}: ${data.error}`);
-          } else {
-            allResults.push(data.data.context);
-          }
-        } catch (uploadError) {
-          console.error(`Error with document ${doc.name}:`, uploadError);
-          allResults.push(`=== ERROR EN DOCUMENTO: ${doc.name} ===\n${uploadError instanceof Error ? uploadError.message : 'Error desconocido'}`);
+          // Call Gemini API directly from client
+          const result = await analyzeWithGeminiDirect(
+            doc.base64,
+            doc.type || 'application/pdf',
+            doc.name,
+            apiKey
+          );
+          allResults.push(result);
+        } catch (analyzeError) {
+          console.error(`Error with document ${doc.name}:`, analyzeError);
+          allResults.push(`=== ERROR EN DOCUMENTO: ${doc.name} ===\n${analyzeError instanceof Error ? analyzeError.message : 'Error desconocido'}`);
           toast.error(`Error en ${doc.name}`);
         }
       }
@@ -441,7 +420,7 @@ export default function Home() {
 
       setLoadingMessage('Generando informe con IA...');
 
-      // Generate report
+      // Generate report using backend (small text payload, within limits)
       const reportResponse = await fetch('/api/generate-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
