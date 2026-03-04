@@ -148,15 +148,21 @@ export class GeminiService {
     try {
       const prompt = PROMPTS.DOCUMENT_ANALYSIS.replace('{DOCUMENT_NAME}', documentName);
 
+      // Use the correct structure for the new SDK
       const response = await this.ai.models.generateContent({
         model: MODEL_NAME,
         contents: [
-          { text: prompt },
           {
-            fileData: {
-              mimeType: mimeType,
-              fileUri: fileUri
-            }
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                fileData: {
+                  mimeType: mimeType,
+                  fileUri: fileUri
+                }
+              }
+            ]
           }
         ],
         config: {
@@ -187,12 +193,17 @@ export class GeminiService {
       const response = await this.ai.models.generateContent({
         model: MODEL_NAME,
         contents: [
-          { text: prompt },
           {
-            inlineData: {
-              mimeType: mimeType,
-              data: base64Data
-            }
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data
+                }
+              }
+            ]
           }
         ],
         config: {
@@ -226,7 +237,12 @@ export class GeminiService {
 
       const response = await this.ai.models.generateContent({
         model: MODEL_NAME,
-        contents: prompt,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ],
         config: {
           temperature: 0.1,
           maxOutputTokens: 8192,
@@ -251,7 +267,12 @@ export class GeminiService {
 
       const response = await this.ai.models.generateContent({
         model: MODEL_NAME,
-        contents: prompt,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ],
         config: {
           temperature: 0.1,
           maxOutputTokens: 8192,
@@ -276,7 +297,12 @@ export class GeminiService {
 
       const response = await this.ai.models.generateContent({
         model: MODEL_NAME,
-        contents: prompt,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ],
         config: {
           temperature: 0.1,
           maxOutputTokens: 8192,
