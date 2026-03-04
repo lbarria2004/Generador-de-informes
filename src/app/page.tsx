@@ -300,36 +300,23 @@ function fileToBase64(file: File): Promise<string> {
 
 // Upload file directly to Gemini File API (bypasses Vercel payload limit)
 async function uploadFileToGemini(file: File, apiKey: string): Promise<{ uri: string; mimeType: string }> {
+  // Use simple upload method with metadata
+  const metadata = {
+    file: {
+      display_name: file.name
+    }
+  };
+
+  // Create form data with file and metadata
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('metadata', JSON.stringify(metadata));
+
   const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
 
-  // First, get the resumable upload URL
-  const initiateResponse = await fetch(uploadUrl, {
+  const uploadResponse = await fetch(uploadUrl, {
     method: 'POST',
-    headers: {
-      'X-Goog-Upload-Command': 'start',
-      'X-Goog-Upload-Header:Content-Length': file.size.toString(),
-      'X-Goog-Upload-Header:Content-Type': file.type || 'application/octet-stream',
-    },
-  });
-
-  if (!initiateResponse.ok) {
-    throw new Error('Error iniciando carga del archivo');
-  }
-
-  const uploadSessionUrl = initiateResponse.headers.get('x-goog-upload-url');
-  if (!uploadSessionUrl) {
-    throw new Error('No se obtuvo URL de carga');
-  }
-
-  // Then upload the file
-  const uploadResponse = await fetch(uploadSessionUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Length': file.size.toString(),
-      'X-Goog-Upload-Offset': '0',
-      'X-Goog-Upload-Command': 'upload, finalize',
-    },
-    body: file,
+    body: formData,
   });
 
   if (!uploadResponse.ok) {
@@ -344,8 +331,24 @@ async function uploadFileToGemini(file: File, apiKey: string): Promise<{ uri: st
     throw new Error('No se obtuvo URI del archivo');
   }
 
-  // Wait for file to be processed
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  // Wait for file to be processed (poll for state)
+  let attempts = 0;
+  const maxAttempts = 30;
+  while (attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const checkResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/files/${fileData.file.name}?key=${apiKey}`
+    );
+    
+    if (checkResponse.ok) {
+      const checkData = await checkResponse.json();
+      if (checkData.state === 'ACTIVE' || checkData.state === 'PROCESSING') {
+        break;
+      }
+    }
+    attempts++;
+  }
 
   return { uri: fileUri, mimeType: file.type || 'application/pdf' };
 }
