@@ -10,12 +10,17 @@ import {
   Moon, 
   Sun,
   Menu,
-  X,
   ChevronRight,
   Shield,
   Zap,
   Brain,
-  AlertCircle
+  Key,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  X,
+  FileUp,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -23,82 +28,309 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Textarea } from '@/components/ui/textarea';
 import { useTheme } from 'next-themes';
-import { useAppState, extractContractDataFromReport } from '@/hooks/useAppState';
-import { FileUploader } from '@/components/app/FileUploader';
-import { ProgressStepper } from '@/components/app/ProgressStepper';
-import { ReportViewer } from '@/components/app/ReportViewer';
-import { ReportEditor, RecommendationGenerator } from '@/components/app/ReportEditor';
-import { ContractForm } from '@/components/app/ContractForm';
-import type { ContractData } from '@/types';
+import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
+import type { ContractData, Beneficiario } from '@/types';
 
-// Helper function to safely parse JSON response
-async function safeParseJSON(response: Response): Promise<{ success: boolean; data?: unknown; error?: string }> {
-  try {
-    const text = await response.text();
-    
-    // Check if response is not OK
-    if (!response.ok) {
-      // Try to parse as JSON first
-      try {
-        const jsonError = JSON.parse(text);
-        return { success: false, error: jsonError.error || jsonError.message || `Error ${response.status}` };
-      } catch {
-        // If not JSON, return the text as error
-        return { 
-          success: false, 
-          error: text || `Error del servidor (${response.status}): ${response.statusText}` 
-        };
-      }
-    }
-    
-    // Try to parse as JSON
-    try {
-      const json = JSON.parse(text);
-      return { success: true, data: json };
-    } catch {
-      return { 
-        success: false, 
-        error: 'La respuesta del servidor no es válida. Intenta con un archivo PDF más pequeño.' 
-      };
-    }
-  } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Error de conexión' 
-    };
-  }
+// Types
+interface DocumentUpload {
+  id: string;
+  name: string;
+  size: number;
+  base64: string;
+  type: string;
 }
 
+// API Key Input Component
+function ApiKeyInput({ 
+  apiKey, 
+  setApiKey,
+  isValid,
+  setIsValid 
+}: { 
+  apiKey: string; 
+  setApiKey: (key: string) => void;
+  isValid: boolean;
+  setIsValid: (valid: boolean) => void;
+}) {
+  const [showKey, setShowKey] = useState(false);
+
+  const validateKey = (key: string) => {
+    const valid = key.startsWith('AIza') && key.length > 30;
+    setIsValid(valid);
+    return valid;
+  };
+
+  return (
+    <Card className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <Key className="h-5 w-5 text-amber-600" />
+          <CardTitle className="text-lg">API Key de Google Gemini</CardTitle>
+        </div>
+        <CardDescription>
+          Necesitas una API Key de Google AI Studio para usar esta aplicación
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Input
+              type={showKey ? 'text' : 'password'}
+              placeholder="AIza..."
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                validateKey(e.target.value);
+              }}
+              className={isValid ? 'border-green-500' : ''}
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setShowKey(!showKey)}
+          >
+            {showKey ? <X className="h-4 w-4" /> : <Key className="h-4 w-4" />}
+          </Button>
+        </div>
+        
+        {isValid && (
+          <div className="flex items-center gap-2 text-green-600 text-sm">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>API Key válida</span>
+          </div>
+        )}
+
+        <Alert>
+          <AlertDescription className="text-xs">
+            <strong>¿No tienes API Key?</strong>{' '}
+            <a 
+              href="https://aistudio.google.com/app/apikey" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-primary underline inline-flex items-center gap-1"
+            >
+              Obtén tu clave gratuita aquí
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </AlertDescription>
+        </Alert>
+      </CardContent>
+    </Card>
+  );
+}
+
+// File Uploader Component
+function FileUploaderComponent({
+  documents,
+  setDocuments
+}: {
+  documents: DocumentUpload[];
+  setDocuments: (docs: DocumentUpload[]) => void;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const processFiles = async (files: FileList | File[]) => {
+    setIsProcessing(true);
+    const fileArray = Array.from(files);
+
+    for (const file of fileArray) {
+      const isValidType = file.type === 'application/pdf' || 
+                          file.type.startsWith('image/') ||
+                          file.name.toLowerCase().endsWith('.pdf');
+
+      if (isValidType) {
+        try {
+          const base64 = await fileToBase64(file);
+          const doc: DocumentUpload = {
+            id: Math.random().toString(36).substring(2, 9),
+            name: file.name,
+            size: file.size,
+            base64: base64,
+            type: file.type
+          };
+          setDocuments([...documents, doc]);
+        } catch (error) {
+          console.error('Error processing file:', error);
+          toast.error(`Error al procesar ${file.name}`);
+        }
+      } else {
+        toast.error(`${file.name} no es un archivo válido (PDF o imagen)`);
+      }
+    }
+
+    setIsProcessing(false);
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    processFiles(e.dataTransfer.files);
+  }, [documents]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      processFiles(e.target.files);
+    }
+  }, [documents]);
+
+  const removeDocument = (id: string) => {
+    setDocuments(documents.filter(d => d.id !== id));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div
+        className={`
+          relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300
+          ${isDragging 
+            ? 'border-primary bg-primary/5 scale-[1.02]' 
+            : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'
+          }
+          ${isProcessing ? 'pointer-events-none opacity-60' : 'cursor-pointer'}
+        `}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onClick={() => document.getElementById('file-input')?.click()}
+      >
+        <input
+          id="file-input"
+          type="file"
+          accept=".pdf,image/*"
+          multiple
+          className="hidden"
+          onChange={handleFileInput}
+        />
+        
+        <div className="flex flex-col items-center gap-4">
+          <div className={`p-4 rounded-full ${isDragging ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+            {isProcessing ? (
+              <Loader2 className="h-8 w-8 animate-spin" />
+            ) : (
+              <FileUp className="h-8 w-8" />
+            )}
+          </div>
+          
+          <div>
+            <p className="text-lg font-medium">
+              {isProcessing ? 'Procesando...' : 'Arrastra PDFs o imágenes aquí'}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              SCOMP, Certificados, Cartolas (cualquier tamaño)
+            </p>
+          </div>
+          
+          <Badge variant="secondary">
+            PDF, PNG, JPG, JPEG
+          </Badge>
+        </div>
+      </div>
+
+      {documents.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-muted-foreground">
+            Documentos cargados ({documents.length})
+          </p>
+          <div className="grid gap-2 max-h-48 overflow-y-auto">
+            {documents.map((doc) => (
+              <Card key={doc.id} className="group">
+                <CardContent className="flex items-center justify-between p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <FileText className="h-4 w-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium truncate max-w-[200px]">{doc.name}</p>
+                      <p className="text-xs text-muted-foreground">{formatSize(doc.size)}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeDocument(doc.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Helper functions
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1] || result;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Main Page
 export default function Home() {
   const { theme, setTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
-  const {
-    documents,
-    currentReport,
-    setCurrentReport,
-    isLoading,
-    setIsLoading,
-    loadingMessage,
-    setLoadingMessage,
-    currentStep,
-    setCurrentStep,
-    setContractData,
-    resetAll
-  } = useAppState();
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyValid, setApiKeyValid] = useState(false);
+  const [documents, setDocuments] = useState<DocumentUpload[]>([]);
+  const [currentReport, setCurrentReport] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
+  const [modificationInstructions, setModificationInstructions] = useState('');
 
   // Analyze documents
   const handleAnalyze = useCallback(async () => {
+    if (!apiKeyValid) {
+      toast.error('Ingresa una API Key válida de Google Gemini');
+      return;
+    }
+
     if (documents.length === 0) {
-      toast.error('Primero carga los documentos PDF');
+      toast.error('Primero carga los documentos');
       return;
     }
 
     setIsLoading(true);
-    setLoadingMessage('Analizando documentos con IA...');
+    setLoadingMessage('Analizando documentos con Gemini Vision (OCR)...');
 
     try {
       const response = await fetch('/api/analyze', {
@@ -107,69 +339,52 @@ export default function Home() {
         body: JSON.stringify({
           documents: documents.map(d => ({
             name: d.name,
-            base64: d.base64
-          }))
+            base64: d.base64,
+            type: d.type
+          })),
+          apiKey: apiKey
         })
       });
 
-      const result = await safeParseJSON(response);
+      const data = await response.json();
 
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Error al analizar documentos');
-      }
-
-      const data = result.data as { success: boolean; data?: { context: string }; error?: string };
-
-      if (data.success && data.data?.context) {
-        setLoadingMessage('Generando informe...');
-        
-        // Generate report from analyzed context
-        const reportResponse = await fetch('/api/generate-report', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            context: data.data.context
-          })
-        });
-
-        const reportResult = await safeParseJSON(reportResponse);
-
-        if (!reportResult.success || !reportResult.data) {
-          throw new Error(reportResult.error || 'Error al generar informe');
-        }
-
-        const reportData = reportResult.data as { success: boolean; data?: { report: string; verification?: string }; error?: string };
-
-        if (reportData.success && reportData.data?.report) {
-          setCurrentReport(reportData.data.report);
-          setCurrentStep(2);
-          toast.success('Informe generado exitosamente');
-          
-          if (reportData.data.verification) {
-            if (reportData.data.verification.includes('APROBADO')) {
-              toast.success('Verificación aprobada: Informe completo');
-            } else {
-              toast.warning('El informe requiere revisión');
-            }
-          }
-        } else {
-          throw new Error(reportData.error || 'Error al generar el informe');
-        }
-      } else {
+      if (!data.success) {
         throw new Error(data.error || 'Error al analizar documentos');
       }
+
+      setLoadingMessage('Generando informe con IA...');
+
+      // Generate report
+      const reportResponse = await fetch('/api/generate-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context: data.data.context,
+          apiKey: apiKey
+        })
+      });
+
+      const reportData = await reportResponse.json();
+
+      if (!reportData.success) {
+        throw new Error(reportData.error || 'Error al generar informe');
+      }
+
+      setCurrentReport(reportData.data.report);
+      toast.success('Informe generado exitosamente');
+
     } catch (error) {
       console.error('Error:', error);
-      toast.error(error instanceof Error ? error.message : 'Error al analizar documentos');
+      toast.error(error instanceof Error ? error.message : 'Error al procesar');
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [documents, setCurrentReport, setCurrentStep, setIsLoading, setLoadingMessage]);
+  }, [apiKey, apiKeyValid, documents]);
 
   // Modify report
-  const handleModify = useCallback(async (instructions: string) => {
-    if (!currentReport) return;
+  const handleModify = useCallback(async () => {
+    if (!currentReport || !modificationInstructions.trim()) return;
 
     setIsLoading(true);
     setLoadingMessage('Aplicando modificaciones...');
@@ -180,122 +395,32 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           report: currentReport,
-          instructions
+          instructions: modificationInstructions,
+          apiKey: apiKey
         })
       });
 
-      const result = await safeParseJSON(response);
+      const data = await response.json();
 
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Error al modificar informe');
-      }
-
-      const data = result.data as { success: boolean; data?: { report: string }; error?: string };
-
-      if (data.success && data.data?.report) {
-        setCurrentReport(data.data.report);
-      } else {
+      if (!data.success) {
         throw new Error(data.error || 'Error al modificar');
       }
+
+      setCurrentReport(data.data.report);
+      setModificationInstructions('');
+      toast.success('Informe modificado');
+
     } catch (error) {
       console.error('Error:', error);
-      throw error;
+      toast.error(error instanceof Error ? error.message : 'Error al modificar');
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [currentReport, setCurrentReport, setIsLoading, setLoadingMessage]);
+  }, [currentReport, modificationInstructions, apiKey]);
 
-  // Generate recommendation
-  const handleGenerateRecommendation = useCallback(async (instructions: string) => {
-    if (!currentReport) return;
-
-    setIsLoading(true);
-    setLoadingMessage('Generando recomendación...');
-
-    try {
-      const response = await fetch('/api/generate-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          context: currentReport,
-          instructions
-        })
-      });
-
-      const result = await safeParseJSON(response);
-
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Error al generar recomendación');
-      }
-
-      const data = result.data as { success: boolean; data?: { report: string }; error?: string };
-
-      if (data.success && data.data?.report) {
-        const newReport = currentReport + '\n\n' + data.data.report;
-        setCurrentReport(newReport);
-        toast.success('Recomendación generada');
-      } else {
-        throw new Error(data.error || 'Error al generar recomendación');
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-      setLoadingMessage('');
-    }
-  }, [currentReport, setCurrentReport, setIsLoading, setLoadingMessage]);
-
-  // Generate contract
-  const handleGenerateContract = useCallback(async (
-    type: 'vejez_invalidez' | 'sobrevivencia',
-    data: ContractData
-  ) => {
-    setIsLoading(true);
-    setLoadingMessage('Generando contrato...');
-
-    try {
-      const response = await fetch('/api/generate-contract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contractType: type,
-          contractData: data
-        })
-      });
-
-      if (!response.ok) {
-        const result = await safeParseJSON(response);
-        throw new Error(result.error || 'Error al generar contrato');
-      }
-
-      // Download the file
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = type === 'sobrevivencia' 
-        ? 'Contrato_Asesoria_Sobrevivencia.docx'
-        : 'Contrato_Asesoria_Vejez_Invalidez.docx';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast.success('Contrato descargado');
-      setCurrentStep(3);
-    } catch (error) {
-      console.error('Error:', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-      setLoadingMessage('');
-    }
-  }, [setCurrentStep, setIsLoading, setLoadingMessage]);
-
-  // Download report as markdown
-  const handleDownloadReport = useCallback(() => {
+  // Download report
+  const handleDownload = useCallback(() => {
     if (!currentReport) return;
 
     const blob = new Blob([currentReport], { type: 'text/markdown' });
@@ -313,14 +438,16 @@ export default function Home() {
 
   // Reset
   const handleReset = useCallback(() => {
-    resetAll();
+    setDocuments([]);
+    setCurrentReport('');
+    setModificationInstructions('');
     toast.info('Sesión reiniciada');
-  }, [resetAll]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur">
         <div className="container flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-4">
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -333,18 +460,38 @@ export default function Home() {
                 <SheetHeader>
                   <SheetTitle className="flex items-center gap-2">
                     <Shield className="h-5 w-5 text-primary" />
-                    Acciones Rápidas
+                    Acciones
                   </SheetTitle>
                 </SheetHeader>
                 <div className="mt-6 space-y-4">
-                  <SidebarContent 
-                    onAnalyze={handleAnalyze}
-                    onDownload={handleDownloadReport}
-                    onReset={handleReset}
-                    hasDocuments={documents.length > 0}
-                    hasReport={!!currentReport}
-                    isLoading={isLoading}
-                  />
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-2"
+                    onClick={handleAnalyze}
+                    disabled={!apiKeyValid || documents.length === 0 || isLoading}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Generar Informe
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-2"
+                    onClick={handleDownload}
+                    disabled={!currentReport || isLoading}
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar Informe
+                  </Button>
+                  <Separator />
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-2 text-destructive"
+                    onClick={handleReset}
+                    disabled={isLoading}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Nuevo Informe
+                  </Button>
                 </div>
               </SheetContent>
             </Sheet>
@@ -358,7 +505,7 @@ export default function Home() {
                   Asesoría Previsional IA
                 </h1>
                 <p className="text-xs text-muted-foreground hidden sm:block">
-                  Sistema Inteligente de Pensiones
+                  Sistema Inteligente con Google Gemini
                 </p>
               </div>
             </div>
@@ -367,7 +514,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="hidden sm:flex items-center gap-1">
               <Brain className="h-3 w-3" />
-              Potenciado por IA
+              Google Gemini
             </Badge>
             
             <Button
@@ -375,11 +522,7 @@ export default function Home() {
               size="icon"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? (
-                <Sun className="h-5 w-5" />
-              ) : (
-                <Moon className="h-5 w-5" />
-              )}
+              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
           </div>
         </div>
@@ -387,28 +530,33 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="container px-4 py-6">
-        {/* Progress Stepper */}
-        <div className="mb-8 p-6 rounded-xl bg-card border">
-          <ProgressStepper />
-        </div>
-
-        {/* Content Grid */}
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Panel - Upload & Actions */}
+          {/* Left Panel */}
           <div className="lg:col-span-1 space-y-6">
+            {/* API Key Input */}
+            <ApiKeyInput 
+              apiKey={apiKey}
+              setApiKey={setApiKey}
+              isValid={apiKeyValid}
+              setIsValid={setApiKeyValid}
+            />
+
             {/* Upload Card */}
-            <Card className="card-hover">
+            <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-primary" />
                   <CardTitle className="text-lg">Documentos</CardTitle>
                 </div>
                 <CardDescription>
-                  Sube los PDFs del cliente (SCOMP, Certificados, Cartolas)
+                  Sube PDFs de cualquier tamaño (SCOMP, Certificados)
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <FileUploader onUploadComplete={() => setCurrentStep(1)} />
+                <FileUploaderComponent 
+                  documents={documents}
+                  setDocuments={setDocuments}
+                />
                 
                 {documents.length > 0 && !currentReport && (
                   <motion.div
@@ -418,24 +566,19 @@ export default function Home() {
                   >
                     <Button
                       onClick={handleAnalyze}
-                      disabled={isLoading}
+                      disabled={isLoading || !apiKeyValid}
                       className="w-full gap-2"
                       size="lg"
                     >
                       {isLoading ? (
                         <>
-                          <motion.div
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                          >
-                            <Zap className="h-5 w-5" />
-                          </motion.div>
-                          {loadingMessage || 'Analizando...'}
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          {loadingMessage}
                         </>
                       ) : (
                         <>
                           <Sparkles className="h-5 w-5" />
-                          Generar Informe con IA
+                          Analizar con Gemini Vision
                         </>
                       )}
                     </Button>
@@ -444,22 +587,32 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* Sidebar Actions (Desktop) */}
+            {/* Desktop Actions */}
             <div className="hidden md:block space-y-4">
               <Separator />
-              <SidebarContent 
-                onAnalyze={handleAnalyze}
-                onDownload={handleDownloadReport}
-                onReset={handleReset}
-                hasDocuments={documents.length > 0}
-                hasReport={!!currentReport}
-                isLoading={isLoading}
-              />
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                onClick={handleDownload}
+                disabled={!currentReport || isLoading}
+              >
+                <Download className="h-4 w-4" />
+                Descargar Informe
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 text-destructive"
+                onClick={handleReset}
+                disabled={isLoading}
+              >
+                <RotateCcw className="h-4 w-4" />
+                Nuevo Informe
+              </Button>
             </div>
           </div>
 
-          {/* Right Panel - Report & Editor */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* Right Panel - Report */}
+          <div className="lg:col-span-2">
             <AnimatePresence mode="wait">
               {!currentReport ? (
                 <motion.div
@@ -477,18 +630,12 @@ export default function Home() {
                         No hay informe generado
                       </h3>
                       <p className="text-muted-foreground max-w-md">
-                        Sube los documentos PDF del cliente y haz clic en "Generar Informe con IA" 
-                        para crear el informe de asesoría previsional.
+                        1. Ingresa tu API Key de Google Gemini
+                        <br />
+                        2. Sube los documentos PDF del cliente
+                        <br />
+                        3. Haz clic en "Analizar con Gemini Vision"
                       </p>
-                      
-                      {documents.length === 0 && (
-                        <div className="mt-6 p-4 rounded-lg bg-primary/5 border border-primary/20">
-                          <p className="text-sm text-primary flex items-center gap-2">
-                            <ChevronRight className="h-4 w-4" />
-                            Comienza cargando los documentos en el panel izquierdo
-                          </p>
-                        </div>
-                      )}
                     </div>
                   </Card>
                 </motion.div>
@@ -501,22 +648,56 @@ export default function Home() {
                   className="space-y-6"
                 >
                   {/* Report Viewer */}
-                  <ReportViewer content={currentReport} />
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-primary" />
+                        Informe de Asesoría Previsional
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[500px]">
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <ReactMarkdown>{currentReport}</ReactMarkdown>
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
 
-                  {/* Editor Tools */}
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <ReportEditor onModify={handleModify} isModifying={isLoading} />
-                    <RecommendationGenerator 
-                      onGenerate={handleGenerateRecommendation} 
-                      isGenerating={isLoading} 
-                    />
-                  </div>
-
-                  {/* Contract Form */}
-                  <ContractForm 
-                    onGenerate={handleGenerateContract}
-                    isGenerating={isLoading}
-                  />
+                  {/* Modification */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Modificar Informe</CardTitle>
+                      <CardDescription>
+                        Escribe instrucciones para modificar el informe
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Textarea
+                        placeholder="Ej: 'Elimina la sección de beneficiarios', 'Acorta la recomendación', 'Cambia el tono a más formal'"
+                        value={modificationInstructions}
+                        onChange={(e) => setModificationInstructions(e.target.value)}
+                        className="min-h-[100px]"
+                      />
+                      <Button
+                        onClick={handleModify}
+                        disabled={isLoading || !modificationInstructions.trim()}
+                        className="w-full"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Modificando...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            Aplicar Modificación
+                          </>
+                        )}
+                      </Button>
+                    </CardContent>
+                  </Card>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -529,16 +710,12 @@ export default function Home() {
         <div className="container px-4 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-sm text-muted-foreground">
-              © 2024 Asesoría Previsional IA. Sistema de asesoría inteligente para pensiones.
+              © 2024 Asesoría Previsional IA - Powered by Google Gemini
             </p>
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Shield className="h-4 w-4" />
                 Datos seguros
-              </span>
-              <span className="flex items-center gap-1">
-                <Brain className="h-4 w-4" />
-                IA Avanzada
               </span>
             </div>
           </div>
@@ -563,68 +740,15 @@ export default function Home() {
                 >
                   <Brain className="h-8 w-8 text-primary" />
                 </motion.div>
-                <p className="text-lg font-medium">{loadingMessage || 'Procesando...'}</p>
+                <p className="text-lg font-medium">{loadingMessage}</p>
                 <p className="text-sm text-muted-foreground">
-                  Esto puede tardar unos segundos
+                  Procesando con Google Gemini...
                 </p>
               </div>
             </Card>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-// Sidebar Content Component
-function SidebarContent({
-  onAnalyze,
-  onDownload,
-  onReset,
-  hasDocuments,
-  hasReport,
-  isLoading
-}: {
-  onAnalyze: () => void;
-  onDownload: () => void;
-  onReset: () => void;
-  hasDocuments: boolean;
-  hasReport: boolean;
-  isLoading: boolean;
-}) {
-  return (
-    <div className="space-y-3">
-      <Button
-        variant="outline"
-        className="w-full justify-start gap-2"
-        onClick={onAnalyze}
-        disabled={!hasDocuments || isLoading || hasReport}
-      >
-        <Sparkles className="h-4 w-4" />
-        Generar Informe
-      </Button>
-
-      <Button
-        variant="outline"
-        className="w-full justify-start gap-2"
-        onClick={onDownload}
-        disabled={!hasReport || isLoading}
-      >
-        <Download className="h-4 w-4" />
-        Descargar Informe
-      </Button>
-
-      <Separator />
-
-      <Button
-        variant="ghost"
-        className="w-full justify-start gap-2 text-destructive hover:text-destructive"
-        onClick={onReset}
-        disabled={isLoading}
-      >
-        <RotateCcw className="h-4 w-4" />
-        Nuevo Informe
-      </Button>
     </div>
   );
 }

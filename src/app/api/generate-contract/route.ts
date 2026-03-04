@@ -1,25 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, BorderStyle, WidthType, VerticalAlign, ShadingType, Header, Footer, PageNumber, HeadingLevel } from 'docx';
 import type { ContractData, Beneficiario } from '@/types';
-import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  Table,
-  TableRow,
-  TableCell,
-  AlignmentType,
-  BorderStyle,
-  WidthType,
-  VerticalAlign,
-  ShadingType,
-  Header,
-  Footer,
-  PageNumber,
-  HeadingLevel
-} from 'docx';
 
-// Color scheme - Professional Ink & Zen
+export const runtime = 'nodejs';
+
+// Color scheme
 const colors = {
   primary: '0B1220',
   body: '0F172A',
@@ -183,13 +168,11 @@ function createVejezInvalidezContract(data: ContractData): Document {
           })
         },
         children: [
-          // Title
           new Paragraph({
             heading: HeadingLevel.TITLE,
             children: [new TextRun({ text: 'CONTRATO DE ASESORÍA PREVISIONAL', bold: true })]
           }),
 
-          // Location and date
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { after: 400 },
@@ -202,7 +185,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
             ]
           }),
 
-          // Parties
           new Paragraph({
             spacing: { after: 200 },
             children: [new TextRun({ text: 'ENTRE:', bold: true, size: 24, color: colors.primary })]
@@ -230,7 +212,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
             ]
           }),
 
-          // First clause
           new Paragraph({
             heading: HeadingLevel.HEADING_1,
             children: [new TextRun({ text: 'PRIMERO: ANTECEDENTES DEL AFILIADO' })]
@@ -262,7 +243,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
           createFieldParagraph('Sistema de Salud', data.sistemaSalud),
           createFieldParagraph('Tipo de Pensión', data.tipoPension),
 
-          // Second clause
           new Paragraph({
             heading: HeadingLevel.HEADING_1,
             children: [new TextRun({ text: 'SEGUNDO: OBJETO DEL CONTRATO' })]
@@ -279,7 +259,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
             ]
           }),
 
-          // Third clause
           new Paragraph({
             heading: HeadingLevel.HEADING_1,
             children: [new TextRun({ text: 'TERCERO: SERVICIOS' })]
@@ -326,7 +305,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
             ]
           }),
 
-          // Fourth clause
           new Paragraph({
             heading: HeadingLevel.HEADING_1,
             children: [new TextRun({ text: 'CUARTO: HONORARIOS' })]
@@ -343,7 +321,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
             ]
           }),
 
-          // Fifth clause
           new Paragraph({
             heading: HeadingLevel.HEADING_1,
             children: [new TextRun({ text: 'QUINTO: CONFIDENCIALIDAD' })]
@@ -360,7 +337,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
             ]
           }),
 
-          // Sixth clause
           new Paragraph({
             heading: HeadingLevel.HEADING_1,
             children: [new TextRun({ text: 'SEXTO: VIGENCIA' })]
@@ -377,7 +353,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
             ]
           }),
 
-          // Signature section
           new Paragraph({
             spacing: { before: 600, after: 200 },
             children: [
@@ -391,7 +366,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
 
           new Paragraph({ spacing: { before: 600 }, children: [] }),
 
-          // Signature lines
           new Table({
             columnWidths: [4680, 4680],
             rows: [
@@ -435,82 +409,6 @@ function createVejezInvalidezContract(data: ContractData): Document {
   });
 }
 
-function createSobrevivenciaContract(data: ContractData): Document {
-  const today = new Date().toLocaleDateString('es-CL', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-
-  const doc = createVejezInvalidezContract(data);
-
-  // Modify sections for sobrevivencia
-  const sections = doc.sections;
-  if (sections && sections[0]) {
-    const children = sections[0].children as Paragraph[];
-
-    // Find the title and modify it
-    const titleIndex = children.findIndex((p: Paragraph) => {
-      const text = p.children?.[0] as TextRun;
-      return text?.text?.includes('CONTRATO DE ASESORÍA PREVISIONAL');
-    });
-
-    if (titleIndex !== -1) {
-      children[titleIndex] = new Paragraph({
-        heading: HeadingLevel.TITLE,
-        children: [new TextRun({ text: 'CONTRATO DE ASESORÍA PREVISIONAL - PENSIÓN DE SOBREVIVENCIA', bold: true })]
-      });
-    }
-
-    // Insert causante and consultante info after the parties section
-    const insertIndex = children.findIndex((p: Paragraph) => {
-      const runs = p.children as TextRun[];
-      return runs?.some(r => r.text?.includes('Y por otra parte, el Asesor'));
-    });
-
-    if (insertIndex !== -1) {
-      const newSections: Paragraph[] = [
-        new Paragraph({
-          heading: HeadingLevel.HEADING_2,
-          children: [new TextRun({ text: 'ANTECEDENTES DEL CAUSANTE FALLECIDO' })]
-        }),
-        createFieldParagraph('Nombre del Causante', data.nombreCausante || ''),
-        createFieldParagraph('RUT del Causante', data.rutCausante || ''),
-        new Paragraph({ spacing: { after: 200 }, children: [] }),
-        new Paragraph({
-          heading: HeadingLevel.HEADING_2,
-          children: [new TextRun({ text: 'ANTECEDENTES DEL CONSULTANTE (BENEFICIARIO SOLICITANTE)' })]
-        }),
-        createFieldParagraph('Nombre del Consultante', data.nombreConsultante || data.nombreAfiliado || ''),
-        createFieldParagraph('RUT del Consultante', data.rutConsultante || data.rutAfiliado || ''),
-      ];
-
-      // Add beneficiaries table if there are any
-      if (data.beneficiarios && data.beneficiarios.length > 0) {
-        newSections.push(
-          new Paragraph({ spacing: { after: 200 }, children: [] }),
-          new Paragraph({
-            heading: HeadingLevel.HEADING_2,
-            children: [new TextRun({ text: 'BENEFICIARIOS DECLARADOS' })]
-          }),
-          new Paragraph({
-            spacing: { after: 150 },
-            children: [new TextRun({ text: 'El consultante declara los siguientes beneficiarios legales de pensión:', size: 22, color: colors.body })]
-          })
-        );
-
-        // Create beneficiaries table
-        const beneficiariesTable = createBeneficiariesTable(data.beneficiarios);
-        (children as (Paragraph | Table)[]).splice(insertIndex + 1, 0, ...newSections, beneficiariesTable);
-      } else {
-        (children as (Paragraph | Table)[]).splice(insertIndex + 1, 0, ...newSections);
-      }
-    }
-  }
-
-  return doc;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -526,12 +424,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create the appropriate document
-    const doc = contractType === 'sobrevivencia'
-      ? createSobrevivenciaContract(contractData)
-      : createVejezInvalidezContract(contractData);
-
-    // Generate buffer
+    const doc = createVejezInvalidezContract(contractData);
     const buffer = await Packer.toBuffer(doc);
 
     const contractName = contractType === 'sobrevivencia'

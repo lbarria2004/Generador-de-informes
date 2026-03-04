@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateReport, generateRecommendation, verifyReport } from '@/lib/ai-service';
+import { GeminiService, PROMPTS } from '@/lib/gemini-service';
+
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { context, instructions } = body;
+    const { context, instructions, apiKey } = body;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { success: false, error: 'API Key de Google Gemini es requerida' },
+        { status: 400 }
+      );
+    }
 
     if (!context) {
       return NextResponse.json(
@@ -13,16 +23,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate the main report (Sections 1-5)
-    const report = await generateReport(context);
+    const geminiService = new GeminiService(apiKey);
 
-    // Verify the report consistency
-    const verification = await verifyReport(context, report);
+    // Generate the main report (Sections 1-5)
+    const report = await geminiService.generateReport(context);
 
     // If instructions provided, also generate recommendation (Section 6)
     let fullReport = report;
     if (instructions && instructions.trim().length > 0) {
-      const recommendation = await generateRecommendation(report, instructions);
+      const recommendation = await geminiService.generateRecommendation(report, instructions);
       fullReport = `${report}\n\n${recommendation}`;
     }
 
@@ -30,17 +39,25 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         report: fullReport,
-        analysisOnly: report,
-        verification
+        analysisOnly: report
       }
     });
   } catch (error) {
     console.error('Error in generate-report API:', error);
+    
+    let errorMessage = 'Error al generar el informe';
+    if (error instanceof Error) {
+      if (error.message.includes('API key') || error.message.includes('api key')) {
+        errorMessage = 'API Key inválida. Verifica tu clave de Google Gemini en: https://aistudio.google.com/app/apikey';
+      } else if (error.message.includes('quota')) {
+        errorMessage = 'Se ha excedido la cuota de la API. Intenta más tarde.';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Error al generar el informe' 
-      },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

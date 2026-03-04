@@ -1,27 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { modifyReport } from '@/lib/ai-service';
+import { GeminiService, PROMPTS } from '@/lib/gemini-service';
+
+export const runtime = 'nodejs';
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { report, instructions } = body;
+    const { report, instructions, apiKey } = body;
 
-    if (!report) {
+    if (!apiKey) {
       return NextResponse.json(
-        { success: false, error: 'No se proporcionó informe para modificar' },
+        { success: false, error: 'API Key de Google Gemini es requerida' },
         { status: 400 }
       );
     }
 
-    if (!instructions || instructions.trim().length === 0) {
+    if (!report || !instructions) {
       return NextResponse.json(
-        { success: false, error: 'No se proporcionaron instrucciones de modificación' },
+        { success: false, error: 'Se requiere el informe y las instrucciones de modificación' },
         { status: 400 }
       );
     }
 
-    // Modify the report using AI
-    const modifiedReport = await modifyReport(report, instructions);
+    const geminiService = new GeminiService(apiKey);
+    const modifiedReport = await geminiService.modifyReport(report, instructions);
 
     return NextResponse.json({
       success: true,
@@ -31,11 +34,18 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error in modify-report API:', error);
+    
+    let errorMessage = 'Error al modificar el informe';
+    if (error instanceof Error) {
+      if (error.message.includes('API key')) {
+        errorMessage = 'API Key inválida. Verifica tu clave de Google Gemini.';
+      } else {
+        errorMessage = error.message;
+      }
+    }
+    
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Error al modificar el informe' 
-      },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }
