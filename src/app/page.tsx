@@ -10,17 +10,16 @@ import {
   Moon, 
   Sun,
   Menu,
-  ChevronRight,
   Shield,
-  Zap,
   Brain,
   Key,
   CheckCircle2,
   ExternalLink,
   Loader2,
-  X,
   FileUp,
-  Trash2
+  Trash2,
+  FileDown,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -35,7 +34,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTheme } from 'next-themes';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
-import type { ContractData, Beneficiario } from '@/types';
+import { downloadDocxReport } from '@/lib/docx-generator';
 
 // Types
 interface DocumentUpload {
@@ -485,21 +484,18 @@ export default function Home() {
     }
   }, [currentReport, modificationInstructions, apiKey]);
 
-  // Download report
-  const handleDownload = useCallback(() => {
+  // Download report as DOCX
+  const handleDownload = useCallback(async () => {
     if (!currentReport) return;
 
-    const blob = new Blob([currentReport], { type: 'text/markdown' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Informe_Asesoria_Previsional.md';
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-
-    toast.success('Informe descargado');
+    try {
+      toast.info('Generando documento Word...');
+      await downloadDocxReport(currentReport);
+      toast.success('Informe DOCX descargado');
+    } catch (error) {
+      console.error('Error generating DOCX:', error);
+      toast.error('Error al generar el documento');
+    }
   }, [currentReport]);
 
   // Reset
@@ -713,18 +709,115 @@ export default function Home() {
                   exit={{ opacity: 0 }}
                   className="space-y-6"
                 >
+                  {/* Report Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                      <h2 className="text-xl font-semibold">Informe de Asesoría Previsional</h2>
+                    </div>
+                    <Button 
+                      onClick={handleDownload} 
+                      className="gap-2"
+                      disabled={isLoading}
+                    >
+                      <FileDown className="h-4 w-4" />
+                      Descargar DOCX
+                    </Button>
+                  </div>
+
                   {/* Report Viewer */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-primary" />
-                        Informe de Asesoría Previsional
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ScrollArea className="h-[500px]">
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <ReactMarkdown>{currentReport}</ReactMarkdown>
+                  <Card className="overflow-hidden">
+                    <CardContent className="p-0">
+                      <ScrollArea className="h-[550px]">
+                        <div className="p-6">
+                          <div className="report-container">
+                            <ReactMarkdown
+                              components={{
+                                h1: ({ children }) => (
+                                  <h1 className="text-2xl font-bold text-primary mb-4 pb-2 border-b-2 border-primary/20">
+                                    {children}
+                                  </h1>
+                                ),
+                                h2: ({ children }) => (
+                                  <h2 className="text-xl font-semibold text-primary mt-6 mb-3 pb-1 border-b border-primary/10">
+                                    {children}
+                                  </h2>
+                                ),
+                                h3: ({ children }) => (
+                                  <h3 className="text-lg font-semibold text-foreground mt-4 mb-2">
+                                    {children}
+                                  </h3>
+                                ),
+                                h4: ({ children }) => (
+                                  <h4 className="text-base font-medium text-muted-foreground mt-3 mb-2">
+                                    {children}
+                                  </h4>
+                                ),
+                                p: ({ children }) => (
+                                  <p className="text-sm leading-relaxed mb-2 text-foreground/90">
+                                    {children}
+                                  </p>
+                                ),
+                                ul: ({ children }) => (
+                                  <ul className="list-disc list-inside space-y-1 my-2 ml-2">
+                                    {children}
+                                  </ul>
+                                ),
+                                ol: ({ children }) => (
+                                  <ol className="list-decimal list-inside space-y-1 my-2 ml-2">
+                                    {children}
+                                  </ol>
+                                ),
+                                li: ({ children }) => (
+                                  <li className="text-sm text-foreground/90">
+                                    {children}
+                                  </li>
+                                ),
+                                strong: ({ children }) => (
+                                  <strong className="font-semibold text-foreground">
+                                    {children}
+                                  </strong>
+                                ),
+                                table: ({ children }) => (
+                                  <div className="my-4 overflow-x-auto rounded-lg border border-border">
+                                    <table className="w-full text-sm">
+                                      {children}
+                                    </table>
+                                  </div>
+                                ),
+                                thead: ({ children }) => (
+                                  <thead className="bg-primary/10">
+                                    {children}
+                                  </thead>
+                                ),
+                                th: ({ children }) => (
+                                  <th className="px-4 py-2 text-left font-semibold text-foreground border-b border-border">
+                                    {children}
+                                  </th>
+                                ),
+                                td: ({ children }) => (
+                                  <td className="px-4 py-2 border-b border-border/50 text-foreground/90">
+                                    {children}
+                                  </td>
+                                ),
+                                tr: ({ children }) => (
+                                  <tr className="hover:bg-muted/30 transition-colors">
+                                    {children}
+                                  </tr>
+                                ),
+                                blockquote: ({ children }) => (
+                                  <blockquote className="border-l-4 border-primary/50 pl-4 my-3 italic text-muted-foreground">
+                                    {children}
+                                  </blockquote>
+                                ),
+                                hr: () => (
+                                  <hr className="my-6 border-t border-border" />
+                                ),
+                              }}
+                            >
+                              {currentReport}
+                            </ReactMarkdown>
+                          </div>
                         </div>
                       </ScrollArea>
                     </CardContent>
@@ -735,7 +828,7 @@ export default function Home() {
                     <CardHeader>
                       <CardTitle className="text-lg">Modificar Informe</CardTitle>
                       <CardDescription>
-                        Escribe instrucciones para modificar el informe
+                        Escribe instrucciones en lenguaje natural para modificar el informe
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
