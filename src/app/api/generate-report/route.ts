@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GeminiService, PROMPTS } from '@/lib/gemini-service';
+import { GeminiService } from '@/lib/gemini-service';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
