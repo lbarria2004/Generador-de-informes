@@ -1,16 +1,11 @@
 # 🏛️ Asesoría Previsional IA
 
-Sistema inteligente de asesoría previsional para Chile, potenciado por Inteligencia Artificial.
-
-![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=flat-square&logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38B2AC?style=flat-square&logo=tailwind-css)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+Sistema inteligente de asesoría previsional para Chile, potenciado por **Google Gemini AI**.
 
 ## ✨ Características
 
 - 📄 **Análisis de Documentos PDF** - Extrae automáticamente datos de SCOMP, Certificados de Saldo, Cartolas
-- 🤖 **IA Avanzada** - Utiliza VLM (Vision Language Model) para análisis preciso de documentos
+- 🤖 **Google Gemini Vision** - OCR avanzado para PDFs de cualquier tamaño, incluyendo documentos escaneados
 - 📝 **Generación de Informes** - Crea informes de asesoría previsional estructurados (Secciones 1-6)
 - ✏️ **Modificación Inteligente** - Modifica informes con instrucciones en lenguaje natural
 - 📋 **Contratos DOCX** - Genera contratos profesionales en formato Word
@@ -20,10 +15,17 @@ Sistema inteligente de asesoría previsional para Chile, potenciado por Intelige
 
 ### Prerrequisitos
 
-- Node.js 18+ o Bun
-- Cuenta de GitHub (para deploy en Vercel)
+- Node.js 18+
+- **API Key de Google Gemini** (gratuita)
 
-### Instalación
+### Obtener API Key de Google Gemini
+
+1. Ve a [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Inicia sesión con tu cuenta de Google
+3. Haz clic en "Create API Key"
+4. Copia la clave generada
+
+### Instalación Local
 
 ```bash
 # Clonar el repositorio
@@ -31,13 +33,9 @@ git clone https://github.com/lbarria2004/Generador-de-informes.git
 cd Generador-de-informes
 
 # Instalar dependencias
-bun install
-# o
 npm install
 
 # Ejecutar en desarrollo
-bun run dev
-# o
 npm run dev
 ```
 
@@ -45,6 +43,7 @@ npm run dev
 
 1. Conecta tu repositorio en [vercel.com](https://vercel.com)
 2. La aplicación se desplegará automáticamente
+3. No se requieren variables de entorno (la API Key la ingresa el usuario)
 
 ## 📁 Estructura del Proyecto
 
@@ -55,28 +54,25 @@ src/
 │   ├── layout.tsx            # Layout con providers
 │   ├── globals.css           # Estilos globales
 │   └── api/
-│       ├── analyze/          # Análisis de PDFs
+│       ├── analyze/          # Análisis de PDFs con Gemini Vision
 │       ├── generate-report/  # Generación de informes
 │       ├── modify-report/    # Modificación de informes
-│       └── generate-contract/# Generación de contratos
+│       └── generate-contract/# Generación de contratos DOCX
 ├── components/
-│   ├── app/                  # Componentes de la aplicación
 │   └── ui/                   # Componentes shadcn/ui
 ├── lib/
-│   └── ai-service.ts         # Servicios de IA
-├── hooks/
-│   └── useAppState.ts        # Estado global
+│   └── gemini-service.ts     # Servicio de Google Gemini
 └── types/
     └── index.ts              # Tipos TypeScript
 ```
 
 ## 🔧 Flujo de Trabajo
 
-1. **Cargar Documentos** - Sube los PDFs del cliente (SCOMP, Certificados, Cartolas)
-2. **Analizar** - La IA extrae automáticamente los datos
-3. **Generar Informe** - Crea el informe estructurado (Secciones 1-5)
-4. **Modificar** - Aplica cambios con instrucciones en lenguaje natural
-5. **Agregar Recomendación** - Genera la Sección 6 personalizada
+1. **Ingresar API Key** - Ingresa tu API Key de Google Gemini
+2. **Cargar Documentos** - Sube los PDFs del cliente (SCOMP, Certificados, Cartolas)
+3. **Analizar** - Gemini Vision extrae automáticamente los datos (OCR incluido)
+4. **Generar Informe** - Crea el informe estructurado (Secciones 1-5)
+5. **Modificar** - Aplica cambios con instrucciones en lenguaje natural
 6. **Exportar** - Descarga el informe o genera el contrato DOCX
 
 ## 📋 Tipos de Pensión Soportados
@@ -95,13 +91,13 @@ src/
 
 ## 🛡️ Seguridad
 
-- ✅ Sin credenciales hardcodeadas
-- ✅ Variables de entorno para configuración sensible
-- ✅ Autenticación mediante SDK seguro
+- ✅ La API Key se procesa localmente y no se almacena en el servidor
+- ✅ Los documentos se procesan en memoria y no se guardan
+- ✅ Conexión segura con Google Gemini API
 
 ## 📄 Licencia
 
-Este proyecto está bajo la Licencia MIT.
+MIT License
 
 ---
 
