@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, GenerativeModel, Part } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
 // Prompts for the pension advisory system
 export const PROMPTS = {
@@ -126,30 +126,14 @@ INSTRUCCIONES DE MODIFICACIÓN:
 INFORME MODIFICADO:`
 };
 
+// Model names - using the latest available models
+const MODEL_NAME = 'gemini-2.5-flash';
+
 export class GeminiService {
-  private model: GenerativeModel;
-  private visionModel: GenerativeModel;
+  private ai: GoogleGenAI;
 
   constructor(apiKey: string) {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // Text model
-    this.model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 8192,
-      }
-    });
-
-    // Vision model (same model, handles multimodal)
-    this.visionModel = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 8192,
-      }
-    });
+    this.ai = new GoogleGenAI({ apiKey });
   }
 
   /**
@@ -164,17 +148,24 @@ export class GeminiService {
     try {
       const prompt = PROMPTS.DOCUMENT_ANALYSIS.replace('{DOCUMENT_NAME}', documentName);
 
-      const documentPart: Part = {
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType
+      const response = await this.ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Data
+            }
+          }
+        ],
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
         }
-      };
+      });
 
-      const result = await this.visionModel.generateContent([prompt, documentPart]);
-      const response = await result.response;
-      const text = response.text();
-
+      const text = response.text;
       return `=== DOCUMENTO: ${documentName} ===\n${text}`;
     } catch (error) {
       console.error('Error in analyzeDocumentWithVision:', error);
@@ -197,9 +188,16 @@ export class GeminiService {
         .replace('{FECHA_HOY}', fechaHoy) +
         '\n\n---\nDATOS EXTRAÍDOS DE LOS DOCUMENTOS:\n' + context + '\n---';
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      const response = await this.ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
+        }
+      });
+
+      return response.text;
     } catch (error) {
       console.error('Error in generateReport:', error);
       throw new Error(`Error al generar informe: ${error instanceof Error ? error.message : 'Error desconocido'}`);
@@ -215,9 +213,16 @@ export class GeminiService {
         .replace('{INSTRUCCIONES}', instructions)
         .replace('{ANALISIS}', analysis);
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      const response = await this.ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
+        }
+      });
+
+      return response.text;
     } catch (error) {
       console.error('Error in generateRecommendation:', error);
       throw new Error(`Error al generar recomendación: ${error instanceof Error ? error.message : 'Error desconocido'}`);
@@ -233,9 +238,16 @@ export class GeminiService {
         .replace('{INFORME}', report)
         .replace('{INSTRUCCIONES}', instructions);
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      const response = await this.ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
+        }
+      });
+
+      return response.text;
     } catch (error) {
       console.error('Error in modifyReport:', error);
       throw new Error(`Error al modificar informe: ${error instanceof Error ? error.message : 'Error desconocido'}`);

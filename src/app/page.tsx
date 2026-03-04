@@ -142,7 +142,7 @@ function FileUploaderComponent({
     const fileArray = Array.from(files);
 
     for (const file of fileArray) {
-      const isValidType = file.type === 'application/pdf' || 
+      const isValidType = file.type === 'application/pdf' ||
                           file.type.startsWith('image/') ||
                           file.name.toLowerCase().endsWith('.pdf');
 
@@ -156,7 +156,8 @@ function FileUploaderComponent({
             base64: base64,
             type: file.type
           };
-          setDocuments([...documents, doc]);
+          // Use functional update to avoid dependency on documents
+          setDocuments(prev => [...prev, doc]);
         } catch (error) {
           console.error('Error processing file:', error);
           toast.error(`Error al procesar ${file.name}`);
@@ -169,27 +170,27 @@ function FileUploaderComponent({
     setIsProcessing(false);
   };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     processFiles(e.dataTransfer.files);
-  }, [documents]);
+  };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
-  }, []);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-  }, []);
+  };
 
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       processFiles(e.target.files);
     }
-  }, [documents]);
+  };
 
   const removeDocument = (id: string) => {
     setDocuments(documents.filter(d => d.id !== id));
