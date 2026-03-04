@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GeminiService } from '@/lib/gemini-service';
+import { generateReportDocx } from '@/lib/docx-generator';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -7,7 +8,7 @@ export const maxDuration = 300;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { context, instructions, apiKey } = body;
+    const { context, instructions, apiKey, advisorInfo } = body;
 
     if (!apiKey) {
       return NextResponse.json(
@@ -32,14 +33,22 @@ export async function POST(request: NextRequest) {
     let fullReport = report;
     if (instructions && instructions.trim().length > 0) {
       const recommendation = await geminiService.generateRecommendation(report, instructions);
-      fullReport = `${report}\n\n${recommendation}`;
+      fullReport = `${report}\n\n## 6) Recomendación Final\n\n${recommendation}`;
     }
+
+    // Generate DOCX file
+    const docxBuffer = await generateReportDocx(fullReport, advisorInfo);
+
+    // Return as base64 for download
+    const base64Docx = docxBuffer.toString('base64');
 
     return NextResponse.json({
       success: true,
       data: {
         report: fullReport,
-        analysisOnly: report
+        analysisOnly: report,
+        docxBase64: base64Docx,
+        docxSize: docxBuffer.length,
       }
     });
   } catch (error) {

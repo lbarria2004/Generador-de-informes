@@ -34,7 +34,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTheme } from 'next-themes';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
-import { downloadDocxReport } from '@/lib/docx-generator';
+import { downloadDocxReport, type AdvisorInfo } from '@/lib/docx-generator';
 
 // Types
 interface DocumentUpload {
@@ -376,6 +376,18 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [modificationInstructions, setModificationInstructions] = useState('');
+  
+  // Advisor info state
+  const [advisorInfo, setAdvisorInfo] = useState<AdvisorInfo>({
+    name: '',
+    rut: '',
+    registryNumber: '',
+    entity: '',
+    phone: '',
+    email: '',
+    address: '',
+  });
+  const [showAdvisorForm, setShowAdvisorForm] = useState(false);
 
   // Analyze documents - Call Gemini directly from client (bypasses Vercel limits)
   const handleAnalyze = useCallback(async () => {
@@ -490,13 +502,13 @@ export default function Home() {
 
     try {
       toast.info('Generando documento Word...');
-      await downloadDocxReport(currentReport);
+      await downloadDocxReport(currentReport, advisorInfo);
       toast.success('Informe DOCX descargado');
     } catch (error) {
       console.error('Error generating DOCX:', error);
       toast.error('Error al generar el documento');
     }
-  }, [currentReport]);
+  }, [currentReport, advisorInfo]);
 
   // Reset
   const handleReset = useCallback(() => {
@@ -856,6 +868,97 @@ export default function Home() {
                         )}
                       </Button>
                     </CardContent>
+                  </Card>
+
+                  {/* Advisor Info for Signature */}
+                  <Card>
+                    <CardHeader className="cursor-pointer" onClick={() => setShowAdvisorForm(!showAdvisorForm)}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg">Datos del Asesor Previsional</CardTitle>
+                          <CardDescription>
+                            Información que aparecerá en el pie de firma del documento
+                          </CardDescription>
+                        </div>
+                        <Button variant="ghost" size="sm">
+                          {showAdvisorForm ? 'Ocultar' : 'Editar'}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    {showAdvisorForm && (
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="advisorName">Nombre Completo</Label>
+                            <Input
+                              id="advisorName"
+                              placeholder="Juan Pérez López"
+                              value={advisorInfo.name}
+                              onChange={(e) => setAdvisorInfo({ ...advisorInfo, name: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="advisorRut">RUT</Label>
+                            <Input
+                              id="advisorRut"
+                              placeholder="12.345.678-9"
+                              value={advisorInfo.rut}
+                              onChange={(e) => setAdvisorInfo({ ...advisorInfo, rut: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="registryNumber">N° Registro</Label>
+                            <Input
+                              id="registryNumber"
+                              placeholder="12345"
+                              value={advisorInfo.registryNumber}
+                              onChange={(e) => setAdvisorInfo({ ...advisorInfo, registryNumber: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="entity">Entidad de Asesoría</Label>
+                            <Input
+                              id="entity"
+                              placeholder="Asesoría Previsional XYZ"
+                              value={advisorInfo.entity}
+                              onChange={(e) => setAdvisorInfo({ ...advisorInfo, entity: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="phone">Teléfono</Label>
+                            <Input
+                              id="phone"
+                              placeholder="+56 9 1234 5678"
+                              value={advisorInfo.phone}
+                              onChange={(e) => setAdvisorInfo({ ...advisorInfo, phone: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="email">Email</Label>
+                            <Input
+                              id="email"
+                              type="email"
+                              placeholder="correo@ejemplo.com"
+                              value={advisorInfo.email}
+                              onChange={(e) => setAdvisorInfo({ ...advisorInfo, email: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="address">Dirección</Label>
+                          <Input
+                            id="address"
+                            placeholder="Calle 123, Ciudad"
+                            value={advisorInfo.address}
+                            onChange={(e) => setAdvisorInfo({ ...advisorInfo, address: e.target.value })}
+                          />
+                        </div>
+                      </CardContent>
+                    )}
                   </Card>
                 </motion.div>
               )}
